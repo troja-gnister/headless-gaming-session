@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import socket
 import sys
+import syslog
 
 
 def request(command, **params):
@@ -25,10 +26,19 @@ def main():
     command = args.pop(0) if args else "status"
     params = {}
     if command == "resolution":
+        restart = bool(args and args[-1] == "--restart")
+        if restart:
+            args.pop()
+            if len(args) != 3:
+                raise ValueError("--restart requires explicit WIDTH HEIGHT FPS; it stops Steam and games")
         values = args or [os.environ.get(f"SUNSHINE_CLIENT_{key}", "") for key in ("WIDTH", "HEIGHT", "FPS")]
         if len(values) != 3:
             raise ValueError("resolution requires WIDTH HEIGHT FPS")
         params = dict(zip(("width", "height", "fps"), values))
+        if restart:
+            params["restart"] = True
+        syslog.openlog("headless-gaming")
+        syslog.syslog(syslog.LOG_NOTICE, "Resolution request: " + json.dumps(params))
     elif args:
         raise ValueError("Unexpected arguments")
     print(json.dumps(request(command, **params), indent=2))

@@ -78,14 +78,63 @@ these new restrictions apply to desktop apps. No extra host user is created.
 The desktop home is kept on uninstall. To test the restrictions:
 `python3 ~/.local/share/headless-gaming/desktop-sandbox.py probe`.
 
-Moonlight requests automatically set 1280x720, 1920x1080, 3840x1080 or
-1920x1200, with integer FPS from 30 through 240. In Gaming Mode, changing
-resolution/FPS restarts Gamescope/Steam; an identical request keeps it running.
-In Desktop Mode a resolution change only resizes Sway. The last resolution is
-saved across service restarts; the service starts in Gaming Mode on boot.
+### Dynamic resolutions
+
+Moonlight can request any resolution within configurable safety limits; there
+is no resolution allowlist. The original 1280x720, 1920x1080, 3840x1080 and
+1920x1200 choices remain useful client presets, not server restrictions.
+
+Automatic requests never stop a running Gamescope/Steam session. In Gaming
+Mode (including Steam's menu), a changed resolution or FPS is queued and the
+current display mode is preserved. Sunshine can still stream that display at
+the requested client size, with scaling/letterboxing as necessary. Save your
+game, choose **Switch to Desktop**, then **Return to Gaming** to apply the new
+mode to Gamescope and Steam. In Desktop Mode the request resizes Sway immediately.
+The latest valid request replaces the pending one; requesting the active mode
+cancels a pending change. This deliberately avoids unreliable game detection.
+
+`sessionctl.py status` reports both `resolution` and `pending_resolution`.
+Only successfully applied modes are saved across service restarts; a pending
+request is held in memory. The service starts in Gaming Mode on boot.
 Sunshine prep commands run on a new app launch. To change Moonlight settings,
 quit the current Moonlight app session and relaunch Desktop rather than Resume.
-Do this between games, since a mode change terminates a running game.
+No manual configuration editing is needed for each resolution change.
+
+Default limits require even width/height (encoder compatibility), width
+320–8192, height 200–8192, at most 33,177,600 pixels, and integer FPS 1–240.
+These are safety ceilings, **not a guarantee that a GPU/codec/client supports
+every combination**. Excessive resolutions or FPS can still overload encoding,
+rendering or network capacity; unusual aspect ratios can affect game UI layout.
+Odd dimensions are rejected explicitly, not silently rounded.
+
+Optional overrides go in `~/.config/headless-gaming/limits.json` (or under
+`$XDG_CONFIG_HOME`), outside this source bundle. Only the keys you want to change
+are needed. The controller rereads this file on each resolution request, and
+the installer preserves it. For example:
+
+```json
+{
+  "max_width": 5120,
+  "max_height": 2880,
+  "max_pixels": 14745600,
+  "max_fps": 144
+}
+```
+
+Supported keys are `min_width`, `min_height`, `max_width`, `max_height`,
+`max_pixels`, `min_fps`, `max_fps`; values must be positive integers.
+Rejected requests include the requested dimensions/FPS and the failed limit
+in the log. Invalid requests do not stop the game or replace a queued mode.
+
+For an intentional immediate change from the host, after saving/closing games:
+
+```bash
+python3 ~/.local/share/headless-gaming/sessionctl.py resolution 2560 1440 144 --restart
+```
+
+`--restart` explicitly permits stopping Steam/games and is never supplied by
+the installed Moonlight/Sunshine prep command. Without it, the same command
+uses the safe queueing behavior.
 
 ## Reproduce on a fresh Fedora Server
 
@@ -201,6 +250,7 @@ python3 ~/.local/share/headless-gaming/sessionctl.py gaming
 python3 ~/.local/share/headless-gaming/sessionctl.py resolution 3840 1080 60
 journalctl --user -u headless-game-stream.service -b --no-pager -n 150
 tail -100 ~/.local/state/headless-gaming/gamescope.log
+journalctl -t headless-gaming -b --no-pager -n 30
 systemctl --user restart headless-game-stream.service
 ```
 
@@ -237,8 +287,21 @@ at 3840x1080, 60 Hz:
 python3 tests/live_smoke.py --run
 ```
 
+The focused dynamic-resolution test checks Moonlight-style environment inputs,
+queueing without restarting Gamescope, rejection of unsafe requests, and a
+custom mode through Sway and Gamescope. It also stops/starts Steam; close games
+first. It restores the initial applied resolution:
+
+```bash
+python3 tests/live_resolution.py --run
+```
+
 Deployment, repeat installation, both desktop windows, the Steam shortcut,
 all four resolutions and desktop sandbox restrictions have been exercised.
+The focused live test also passed with a custom 2560x1440 mode: the Moonlight
+prep helper queued it without restarting Gamescope, Desktop Mode applied it,
+and returning to Gaming launched Gamescope at that size. An unsafe request
+was rejected without disturbing the running game session or its queued mode.
 Live checks confirmed that Sway, Sunshine and the controller kept the same PIDs
 through mode transitions and that only HEADLESS-1 was configured. Confirm the
 visual layout and input behavior through Moonlight on your target machine.

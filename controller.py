@@ -9,16 +9,42 @@ import struct
 import subprocess
 import time
 
-MODES = {(1280, 720), (1920, 1080), (3840, 1080), (1920, 1200)}
+DEFAULT_LIMITS = {"min_width": 320, "min_height": 200, "max_width": 8192,
+                  "max_height": 8192, "max_pixels": 33177600, "min_fps": 1, "max_fps": 240}
 
 
-def validate_mode(width, height, fps):
+def load_limits(path):
+    limits = DEFAULT_LIMITS.copy()
+    if path.exists():
+        overrides = json.loads(path.read_text())
+        if not isinstance(overrides, dict) or any(
+                key not in limits or type(value) is not int or value <= 0
+                for key, value in overrides.items()):
+            raise ValueError(f"Invalid limits in {path}: use known keys and positive integers")
+        limits.update(overrides)
+    if any(limits[f"min_{key}"] > limits[f"max_{key}"] for key in ("width", "height", "fps")):
+        raise ValueError(f"Invalid limits in {path}: minimum exceeds maximum")
+    return limits
+
+
+def validate_mode(width, height, fps, limits=None):
+    limits = DEFAULT_LIMITS if limits is None else limits
     values = (width, height, fps)
     if any(not str(v).isascii() or not str(v).isdigit() for v in values):
-        raise ValueError("Width, height and FPS must be positive integers")
+        raise ValueError(f"Invalid mode {width!r}x{height!r}@{fps!r}: width, height and FPS must be positive integers")
     w, h, rate = map(int, values)
-    if (w, h) not in MODES or not 30 <= rate <= 240:
-        raise ValueError("Allowed: 1280x720, 1920x1080, 3840x1080, 1920x1200; FPS 30-240")
+    reason = None
+    if w % 2 or h % 2:
+        reason = "width and height must be even for encoder compatibility"
+    elif not limits["min_width"] <= w <= limits["max_width"] or not limits["min_height"] <= h <= limits["max_height"]:
+        reason = (f"width must be {limits['min_width']}-{limits['max_width']}, "
+                  f"height {limits['min_height']}-{limits['max_height']}")
+    elif w * h > limits["max_pixels"]:
+        reason = f"pixel count exceeds {limits['max_pixels']}"
+    elif not limits["min_fps"] <= rate <= limits["max_fps"]:
+        reason = f"FPS must be {limits['min_fps']}-{limits['max_fps']}"
+    if reason:
+        raise ValueError(f"Rejected {w}x{h}@{rate}: {reason}")
     return w, h, rate
 
 
@@ -30,10 +56,13 @@ class Controller:
         self.state_dir = Path.home() / ".local/state/headless-gaming"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.mode_file = self.state_dir / "resolution.json"
+        self.limits_file = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "headless-gaming/limits.json"
+        limits = load_limits(self.limits_file)
+        self.pending_mode = None
         self.mode = (1920, 1080, 120)
         if self.mode_file.exists():
             try:
-                self.mode = validate_mode(*json.loads(self.mode_file.read_text()))
+                self.mode = validate_mode(*json.loads(self.mode_file.read_text()), limits)
             except (ValueError, TypeError):
                 pass
         self.gamescope = None
@@ -89,6 +118,7 @@ class Controller:
         self.stop_game()
         self.state = "desktop"
         self.sway("workspace number 2")
+        self.apply_pending()
         if not self.desktop_opened:
             sandbox = Path(__file__).with_name("desktop-sandbox.py")
             self.sway(f'exec /usr/bin/python3 "{sandbox}" terminal')
@@ -96,8 +126,15 @@ class Controller:
 
     def status(self):
         return {"ok": True, "state": self.state, "resolution": list(self.mode),
+                "pending_resolution": list(self.pending_mode) if self.pending_mode else None,
+                "notice": "Mode change queued; switch to Desktop to apply without interrupting a game automatically" if self.pending_mode else None,
                 "gamescope_pid": self.gamescope.pid if self.running() else None,
                 "controller_pid": os.getpid(), "error": self.error}
+
+    def apply_pending(self):
+        if self.pending_mode:
+            w, h, fps = self.pending_mode
+            self.dispatch(dict(command="resolution", width=w, height=h, fps=fps))
 
     def dispatch(self, data):
         command = data.get("command")
@@ -106,10 +143,21 @@ class Controller:
         if command == "desktop":
             self.desktop()
         elif command == "gaming":
+            if not self.running():
+                self.state = "desktop"
+                self.apply_pending()
             self.resize(self.mode)
             self.start_game()
         elif command == "resolution":
-            new_mode = validate_mode(data.get("width"), data.get("height"), data.get("fps"))
+            new_mode = validate_mode(data.get("width"), data.get("height"), data.get("fps"), load_limits(self.limits_file))
+            restart = data.get("restart", False)
+            if type(restart) is not bool:
+                raise ValueError("restart must be a boolean")
+            if new_mode != self.mode and self.running() and not restart:
+                self.pending_mode = new_mode
+                self.error = None
+                print(f"session: queued {new_mode}; keeping active {self.mode} and Gamescope alive", flush=True)
+                return self.status()
             if new_mode != self.mode:
                 previous = self.mode
                 was_gaming = self.state == "gaming"
@@ -129,6 +177,8 @@ class Controller:
                 temp = self.mode_file.with_suffix(".tmp")
                 temp.write_text(json.dumps(self.mode) + "\n")
                 temp.replace(self.mode_file)
+            self.pending_mode = None
+            self.error = None
         else:
             raise ValueError("Unknown session command")
         return self.status()
