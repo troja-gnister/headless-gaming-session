@@ -14,12 +14,34 @@ Designed and tested on Fedora Server 44, x86_64, with AMD Vulkan/RADV rendering
 and Mesa VAAPI encoding. The target must support unprivileged user namespaces,
 systemd user services, headless Sway and Sunshine's wlr capture backend.
 Package sources are Fedora, RPM Fusion Free, the pvermeer/sunshine COPR and
-Flathub. See [compatibility notes](docs/compatibility.md) for tested versions.
+Flathub. Vulkan rendering, VAAPI codec support and headless buffer sharing must
+work on the target driver. Intel has not been validated; NVIDIA/NVENC requires
+driver and encoder changes that this bundle does not configure automatically.
 
 It is not a universal installer for every machine: other distributions,
 non-VAAPI encoders (such as NVIDIA NVENC), and untested drivers need adaptation.
 Remote package versions are not pinned, so this reproduces the configuration
 and workflow rather than an identical operating-system image.
+
+### Tested dependency versions
+
+These versions describe the validated software stack; they are not package pins.
+
+| Dependency | Tested version |
+| --- | --- |
+| Sunshine (pvermeer COPR) | 2026.516.143833-4.fc44 |
+| Sway | 1.11-3.fc44 |
+| Gamescope | 3.16.25-1.fc44 |
+| Flatpak | 1.18.2-1.fc44 |
+| Steam runtime | org.freedesktop.Platform 25.08 |
+| PipeWire | 1.6.8-1.fc44 |
+| WirePlumber | 0.5.14-1.fc44 |
+| mesa-va-drivers-freeworld | 26.1.8-1.fc44 |
+| foot | 1.27.0-1.fc44 |
+| Thunar | 4.20.9-1.fc44 |
+| wmenu | 0.2.0-3.fc44 |
+| bubblewrap | 0.12.0-1.fc44 |
+| dbus-daemon | 1.16.2-1.fc44 |
 
 ## Daily use
 
@@ -145,6 +167,11 @@ recovery backup. Packages, repositories, host udev rule, group membership,
 lingering, games, and saved data are retained. Removing those shared host
 settings requires a separate decision; this script does not remove them.
 
+When migrating an existing installation, review old udev rules and capabilities
+separately. The host setup script supplies a 0660 input rule and does not add
+CAP_SYS_ADMIN for wlr capture. Desktop sandboxes expose neither uinput nor host
+control buses. Unrelated Steam Flatpak permissions are preserved.
+
 ## Files and responsibilities
 
 | File | Purpose |
@@ -158,7 +185,6 @@ settings requires a separate decision; this script does not remove them.
 | setup-system.sh, packages.txt | Host packages, repositories, input permissions |
 | templates/ | Sway, service, udev source configurations |
 | tests/, verify.sh | Automated and live checks |
-| docs/ | Design, implementation plan and compatibility notes |
 
 The runtime scripts deploy to `~/.local/share/headless-gaming/`; configurations
 deploy to the usual `~/.config/{sway,sunshine,systemd/user}/` paths. The source
@@ -187,6 +213,36 @@ If the controller itself fails, restart the whole user service.
 Use a keyboard/mouse or Moonlight's mouse emulation in Desktop Mode. Raw gamepad
 buttons do not navigate Sway automatically after Steam Input exits.
 
-This is functional reproducibility, not bit-for-bit OS imaging. Fedora, COPR,
-RPM Fusion, Steam and Flatpak updates can change compatibility. See
-docs/compatibility.md for the tested versions and verification results.
+## Verification
+
+Run the local checks without changing a running session:
+
+```bash
+bash verify.sh
+```
+
+Check the installed service, current output, Flatpak permissions and desktop
+sandbox restrictions:
+
+```bash
+bash verify.sh --live
+```
+
+For a full transition test, save and close games first. This test stops and
+starts Steam, exercises all four resolutions, checks same-mode reconnects,
+and launches the actual Steam library shortcut. It leaves Gaming Mode running
+at 3840x1080, 60 Hz:
+
+```bash
+python3 tests/live_smoke.py --run
+```
+
+Deployment, repeat installation, both desktop windows, the Steam shortcut,
+all four resolutions and desktop sandbox restrictions have been exercised.
+Live checks confirmed that Sway, Sunshine and the controller kept the same PIDs
+through mode transitions and that only HEADLESS-1 was configured. Confirm the
+visual layout and input behavior through Moonlight on your target machine.
+
+A fresh Fedora installation has not been provisioned in a VM for validation,
+and the rollback script has not been exercised against the running deployment.
+Fedora, COPR, RPM Fusion, Steam and Flatpak updates can change compatibility.
