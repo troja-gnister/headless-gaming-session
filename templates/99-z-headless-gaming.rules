@@ -1,0 +1,5 @@
+# Dedicated trusted gaming user belongs to input. Existing Sunshine package
+# rules classify virtual devices. Do not label every event node a keyboard/mouse.
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"
+KERNEL=="uhid", GROUP="input", MODE="0660"
+SUBSYSTEM=="input", KERNEL=="event*", GROUP="input", MODE="0660"

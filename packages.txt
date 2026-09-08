@@ -1,0 +1,18 @@
+# Fedora 44 tested baseline, 2026-09-08. Releases update: this is a dependency
+# manifest, not a promise of bit-for-bit reproduction of remote repositories.
+# sunshine from pvermeer/sunshine COPR; mesa-va-drivers-freeworld from RPM Fusion.
+sunshine
+sway
+gamescope
+flatpak
+pipewire
+pipewire-pulseaudio
+wireplumber
+mesa-va-drivers-freeworld
+libva-utils
+python3
+foot
+Thunar
+wmenu
+bubblewrap
+dbus-daemon

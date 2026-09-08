@@ -1,0 +1,38 @@
+set $mod Mod4
+set $ctl /usr/bin/python3 "@INSTALL@/sessionctl.py"
+set $desktop /usr/bin/python3 "@INSTALL@/desktop-sandbox.py"
+output HEADLESS-1 resolution 1920x1080@120Hz position 0,0
+output HEADLESS-1 bg #203040 solid_color
+font pango:monospace 11
+floating_modifier $mod normal
+default_border pixel 2
+
+# Only the gaming compositor gets fullscreen. Ordinary desktop windows tile.
+for_window [app_id="gamescope"] move to workspace number 1, fullscreen enable
+for_window [class="gamescope"] move to workspace number 1, fullscreen enable
+assign [app_id="headless-desktop"] workspace number 2
+bindsym $mod+Shift+g exec $ctl gaming
+bindsym $mod+Shift+d exec $ctl desktop
+bindsym $mod+Return exec $desktop terminal
+bindsym $mod+d exec $desktop menu
+bindsym $mod+e exec $desktop files
+bindsym $mod+Shift+q kill
+bindsym $mod+f fullscreen toggle
+bindsym $mod+Left focus left
+bindsym $mod+Right focus right
+bindsym $mod+Up focus up
+bindsym $mod+Down focus down
+bindsym $mod+1 workspace number 1
+bindsym $mod+2 workspace number 2
+
+bar {
+    position bottom
+    tray_output none
+    status_command /usr/bin/python3 "@INSTALL@/bar.py"
+    colors {
+        background #17212b
+        statusline #eeeeee
+    }
+}
+exec sunshine
+exec /usr/bin/python3 "@INSTALL@/controller.py"

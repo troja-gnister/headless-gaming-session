@@ -1,0 +1,21 @@
+[Unit]
+Description=Private headless Sway desktop and Gamescope session for Sunshine
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+Environment=TERM=xterm-256color
+Environment=WLR_BACKENDS=headless,libinput
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+Environment=LIBSEAT_BACKEND=noop
+Environment=WLR_RENDER_DRM_DEVICE=@GPU@
+Environment=XDG_CURRENT_DESKTOP=sway
+Environment=XDG_SESSION_TYPE=wayland
+ExecStart=/usr/bin/sway -c %h/.config/sway/config.headless
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+local.json
+backups/
+# Local deployment data and secrets must never be committed.
+.env
+.env.*
+!.env.example
+*.local.json
+*.local.conf
+local/
+runtime/
+logs/
+*.log
+*.pem
+*.key
+*.crt
+sunshine_state.json
+shortcuts.vdf
