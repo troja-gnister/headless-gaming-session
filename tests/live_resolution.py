@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -26,15 +27,35 @@ def main():
     sunshine_pids = subprocess.check_output(["pgrep", "-x", "sunshine"], text=True)
     ipc = f'{os.environ["XDG_RUNTIME_DIR"]}/sway-ipc.{os.getuid()}.{sway_pid}.sock'
     client = Path.home() / ".local/share/headless-gaming/sessionctl.py"
+    apps = json.loads((Path.home() / ".config/sunshine/apps.json").read_text())
+    desktop = next(app for app in apps["apps"] if app["name"] == "Desktop")
+    prep_command = next(step["do"] for step in desktop["prep-cmd"] if str(client) in step["do"])
 
-    def prep(mode):
+    def prep(mode, automatic=False):
         env = dict(os.environ, **dict(zip(("SUNSHINE_CLIENT_WIDTH", "SUNSHINE_CLIENT_HEIGHT", "SUNSHINE_CLIENT_FPS"), map(str, mode))))
-        return subprocess.run([sys.executable, str(client), "resolution"], env=env, text=True, capture_output=True, timeout=55)
+        argv = shlex.split(prep_command) if automatic else [sys.executable, str(client), "resolution"]
+        return subprocess.run(argv, env=env, text=True, capture_output=True, timeout=55)
 
     def outputs():
         return json.loads(subprocess.check_output(["swaymsg", "-s", ipc, "-t", "get_outputs", "-r"], text=True))
 
     try:
+        applied = prep(target, automatic=True)
+        assert applied.returncode == 0, applied.stderr
+        state = json.loads(applied.stdout)
+        assert state["resolution"] == list(target) and state["pending_resolution"] is None
+        assert state["gamescope_pid"] != initial["gamescope_pid"]
+        assert json.loads(prep(target, automatic=True).stdout)["gamescope_pid"] == state["gamescope_pid"]
+        mode = outputs()[0]["current_mode"]
+        assert (mode["width"], mode["height"], mode["refresh"]) == (target[0], target[1], target[2] * 1000)
+        argv = Path(f"/proc/{state['gamescope_pid']}/cmdline").read_bytes().split(b"\0")
+        assert argv[argv.index(b"-w") + 1] == str(target[0]).encode()
+        assert argv[argv.index(b"-h") + 1] == str(target[1]).encode()
+        rejected = prep((8192, 8192, 60), automatic=True)
+        assert rejected.returncode != 0 and "8192x8192@60" in rejected.stderr
+        assert request("status")["gamescope_pid"] == state["gamescope_pid"]
+        print("PASS installed Sunshine prep applied custom mode immediately to Sway/Gamescope; same-mode launch preserved PID; invalid mode did not stop game", flush=True)
+        initial = request("resolution", width=original[0], height=original[1], fps=original[2], restart=True)
         result = prep(target)
         assert result.returncode == 0, result.stderr
         state = json.loads(result.stdout)
@@ -44,7 +65,7 @@ def main():
         assert rejected.returncode != 0 and "8192x8192@60" in rejected.stderr
         assert request("status")["gamescope_pid"] == initial["gamescope_pid"]
         assert request("status")["pending_resolution"] == list(target)
-        print("PASS Moonlight prep accepted a custom mode without restarting; unsafe mode rejected without changing state", flush=True)
+        print("PASS manual request without --restart queued safely; unsafe mode rejected without changing state", flush=True)
         request("desktop")
         for _ in range(40):
             state = request("status")

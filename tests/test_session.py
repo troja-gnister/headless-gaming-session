@@ -1,6 +1,7 @@
 import json
 import io
 import os
+import shlex
 from contextlib import redirect_stdout
 from pathlib import Path
 import struct
@@ -183,7 +184,7 @@ class SessionTests(unittest.TestCase):
                 ctrl.dispatch(dict(command="resolution", width=1280, height=720, fps=60, restart="false"))
             self.assertEqual(ctrl.events, [])
 
-    def test_client_only_allows_restart_with_explicit_dimensions(self):
+    def test_client_explicit_restart_requires_dimensions_or_client_environment(self):
         calls = []
         def receive(command, **params):
             calls.append((command, params))
@@ -192,10 +193,32 @@ class SessionTests(unittest.TestCase):
             with patch.object(sys, "argv", ["sessionctl.py", "resolution", "2560", "1440", "144", "--restart"]):
                 sessionctl.main()
             self.assertEqual(calls, [("resolution", {"width": "2560", "height": "1440", "fps": "144", "restart": True})])
-            with patch.object(sys, "argv", ["sessionctl.py", "resolution", "--restart"]):
+            with patch.object(sys, "argv", ["sessionctl.py", "resolution", "--restart"]), patch.dict(os.environ, {}, clear=True):
                 with self.assertRaises(ValueError):
                     sessionctl.main()
             self.assertEqual(len(calls), 1)
+
+    def test_generated_sunshine_prep_applies_mode_instead_of_queueing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            install = home / ".local/share/headless-gaming"
+            ctrl = FakeController(directory)
+            with patch("deploy.HOME_DIR", home), patch("deploy.INSTALL", install):
+                files = payload("/dev/dri/renderD140", "https://gaming.example.invalid:47990")
+            apps = json.loads(files[home / ".config/sunshine/apps.json"])
+            prep = next(app for app in apps["apps"] if app["name"] == "Desktop")["prep-cmd"][-1]
+            def receive(command, **params):
+                return ctrl.dispatch(dict(command=command, **params))
+            with patch.object(sys, "argv", shlex.split(prep["do"])[1:]), \
+                    patch.dict(os.environ, {"SUNSHINE_CLIENT_WIDTH": "2560", "SUNSHINE_CLIENT_HEIGHT": "1440", "SUNSHINE_CLIENT_FPS": "120"}), \
+                    patch("sessionctl.request", side_effect=receive), redirect_stdout(io.StringIO()):
+                sessionctl.main()
+                self.assertEqual(ctrl.mode, (2560, 1440, 120))
+                self.assertIsNone(ctrl.pending_mode)
+                self.assertEqual(ctrl.events, ["stop", ("resize", (2560, 1440, 120)), "start"])
+                sessionctl.main()
+                self.assertEqual(ctrl.events.count("stop"), 1)
+            self.assertEqual(prep["undo"], "")
 
     def test_moonlight_environment_is_forwarded_without_restart_permission(self):
         calls = []

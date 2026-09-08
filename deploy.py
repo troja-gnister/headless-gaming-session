@@ -78,7 +78,7 @@ def payload(gpu, origins):
         apps["apps"].append(desktop)
     prep = [step for step in desktop.get("prep-cmd", [])
             if "sunshine-mode-switch" not in step.get("do", "") and "headless-gaming/sessionctl.py" not in step.get("do", "")]
-    prep.append({"do": f'/usr/bin/python3 "{INSTALL}/sessionctl.py" resolution', "undo": ""})
+    prep.append({"do": f'/usr/bin/python3 "{INSTALL}/sessionctl.py" resolution --restart', "undo": ""})
     desktop["prep-cmd"] = prep
     files[apps_path] = (json.dumps(apps, indent=2) + "\n").encode()
     for name, title, action in (("return-to-gaming", "Return to Gaming Mode", "gaming"),
