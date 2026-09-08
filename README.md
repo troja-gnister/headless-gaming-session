@@ -166,19 +166,6 @@ folder is the reproducible bundle, not a relocated operating-system runtime.
 No files outside this source folder are needed to deploy it, apart from the
 listed dependencies and the target machine's installation settings.
 
-## What belongs in Git
-
-Commit the scripts, templates, packages.txt, tests, documentation and .gitignore.
-The installer writes rendered configuration to the current user's normal
-configuration directories, never back into this source folder. Runtime state,
-desktop files and deployment backups also live outside the source folder.
-
-Do not copy Sunshine certificates, credentials, pairing state, Steam profiles,
-shortcuts.vdf, logs, rendered configuration or deployment backups into the repo.
-The included .gitignore excludes common local settings, caches and secret-file
-formats as a safeguard. Check staged files before committing; ignore rules do
-not sanitize arbitrary files or remove files already tracked in Git.
-
 ## Troubleshooting
 
 ```bash
